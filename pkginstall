@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# =============================================
+# Cross-platform installer for:
+# chromium, vlc, handbrake, ffmpeg, steam,
+# git, docker, docker-compose, arduino-ide, wget
+# Works on: macOS, Linux (Arch/Debian), WSL, Windows (winget)
+# =============================================
+
+# --- Detect if we're in Windows PowerShell/CMD ---
+if command -v pwsh.exe >/dev/null 2>&1 || command -v powershell.exe >/dev/null 2>&1; then
+    # Check if this script is being run *in* PowerShell/CMD, not Bash
+    if [[ -z "$BASH_VERSION" && -n "$ComSpec" && "$ComSpec" == *"cmd.exe"* ]] || [[ -z "$BASH_VERSION" && "$PSModulePath" ]]; then
+        echo "Detected Windows native shell (CMD or PowerShell)"
+        echo "Running Windows installation using winget..."
+        powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "
+            \$apps = @(
+                'Google.Chrome',
+                'VideoLAN.VLC',
+                'HandBrake.HandBrake',
+                'FFmpeg.FFmpeg',
+                'Valve.Steam',
+                'Git.Git',
+                'Docker.DockerDesktop',
+                'Arduino.ArduinoIDE',
+                'GnuWin32.Wget'
+            )
+            foreach (\$app in \$apps) {
+                Write-Host \"Installing \$app...\" -ForegroundColor Cyan
+                winget install --id=\$app -e --accept-package-agreements --accept-source-agreements || Write-Host \"Failed to install \$app\" -ForegroundColor Yellow
+            }
+            Write-Host '✅ Installation complete!' -ForegroundColor Green
+        "
+        exit 0
+    fi
+fi
+
+# --- From here on, assume Bash environment ---
+set -e
+
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macOS"
+    elif grep -qi microsoft /proc/version 2>/dev/null; then
+        echo "WSL"
+    elif [[ -f /etc/arch-release ]]; then
+        echo "Arch"
+    elif [[ -f /etc/debian_version ]]; then
+        echo "Debian"
+    else
+        echo "Unknown"
+    fi
+}
+
+install_macos() {
+    echo "Detected macOS"
+    if ! command -v brew &>/dev/null; then
+        echo "Installing Homebrew..."
+        /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
+    fi
+    brew update
+    brew install --cask chromium vlc handbrake steam arduino
+    brew install ffmpeg git docker docker-compose wget
+}
+
+install_arch() {
+    echo "Detected Arch Linux"
+    sudo pacman -Syu --noconfirm
+    sudo pacman -S --noconfirm chromium vlc handbrake ffmpeg steam git docker docker-compose arduino wget
+}
+
+install_debian() {
+    echo "Detected Debian/Ubuntu"
+    sudo apt update
+    sudo apt install -y chromium-browser vlc handbrake ffmpeg steam git docker.io docker-compose arduino wget
+}
+
+install_wsl() {
+    echo "Detected Windows Subsystem for Linux (WSL)"
+    echo "⚠️ GUI apps may not work unless you have WSLg (Windows 11)."
+    sudo apt update
+    sudo apt install -y chromium-browser vlc handbrake ffmpeg steam git docker.io docker-compose arduino wget
+}
+
+os=$(detect_os)
+
+case "$os" in
+    "macOS") install_macos ;;
+    "Arch") install_arch ;;
+    "Debian") install_debian ;;
+    "WSL") install_wsl ;;
+    *)
+        echo "❌ Unsupported or unknown OS."
+        exit 1
+        ;;
+esac
+
+echo "✅ Installation complete!"
