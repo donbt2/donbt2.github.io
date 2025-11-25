@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Host File Explorer</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+  #sidebar {
+    width: 260px; overflow-y: auto; padding: 12px; border-right: 1px solid #ddd;
+    box-sizing: border-box;
+  }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #tools {
+    padding: 8px; border-bottom: 1px solid #ddd; display: flex; gap: 8px; align-items: center;
+  }
+  #tree { padding: 8px; }
+  ul { list-style: none; padding-left: 18px; }
+  .folder { cursor: pointer; font-weight: 600; }
+  .file { cursor: pointer; }
+  .hidden { display: none; }
+  #preview {
+    flex: 1; overflow-y: auto; padding: 16px; box-sizing: border-box;
+  }
+  pre { white-space: pre-wrap; font-family: ui-monospace, monospace; }
+  img { max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="tools">
+    <input id="search" placeholder="Search…" style="flex:1;">
+    <select id="sort">
+      <option value="asc">A–Z</option>
+      <option value="desc">Z–A</option>
+    </select>
+  </div>
+  <div id="tree">Loading…</div>
+</div>
+
+<div id="main">
+  <div style="padding:8px;border-bottom:1px solid #ddd;display:flex;gap:12px;">
+    <label>Auto-refresh:
+      <select id="refresh">
+        <option value="0">Off</option>
+        <option value="10">10s</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+      </select>
+    </label>
+    <button id="manual">Refresh now</button>
+  </div>
+  <div id="preview"><i>No file selected</i></div>
+</div>
+
+<script>
+// ------------------------------------------------------------
+// CONFIG (updated for your domain)
+// ------------------------------------------------------------
+const FILE_LIST_URL = "https://scripts.donnellybenjamin.com/files.txt";
+const BASE_URL      = "https://scripts.donnellybenjamin.com/";
+
+// ------------------------------------------------------------
+// GLOBALS
+// ------------------------------------------------------------
+let fileList = [];
+let refreshTimer = null;
+
+// ------------------------------------------------------------
+// LOAD LIST
+// ------------------------------------------------------------
+async function loadList() {
+  const text = await fetch(FILE_LIST_URL).then(r => {
+    if (!r.ok) throw new Error("Could not load file list");
+    return r.text();
+  });
+  fileList = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  applySort();
+  buildTree();
+}
+
+// ------------------------------------------------------------
+// SORT LIST
+// ------------------------------------------------------------
+function applySort() {
+  const order = document.getElementById("sort").value;
+  fileList.sort((a,b)=> order==="asc" ? a.localeCompare(b) : b.localeCompare(a));
+}
+
+// ------------------------------------------------------------
+// SEARCH FILTER
+// ------------------------------------------------------------
+function matchesSearch(path) {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  if (!q) return true;
+  return path.toLowerCase().includes(q);
+}
+
+// ------------------------------------------------------------
+// TREE BUILDING
+// ------------------------------------------------------------
+function buildTree() {
+  const root = {};
+
+  for (const path of fileList) {
+    if (!matchesSearch(path)) continue;
+
+    const parts = path.split("/");
+    let cur = root;
+
+    for (let i=0;i<parts.length;i++){
+      const part = parts[i];
+      if (i === parts.length-1) {
+        cur[part] = null;
+      } else {
+        if (!cur[part]) cur[part] = {};
+        cur = cur[part];
+      }
+    }
+  }
+
+  const container = document.getElementById("tree");
+  container.innerHTML = "";
+  container.appendChild(renderNode(root));
+}
+
+function renderNode(node) {
+  const ul = document.createElement("ul");
+
+  const folders = Object.keys(node).filter(k => node[k] && typeof node[k] === "object").sort();
+  const files   = Object.keys(node).filter(k => node[k] === null).sort();
+
+  folders.forEach(folder => {
+    const li = document.createElement("li");
+    const div = document.createElement("div");
+    div.textContent = "📁 " + folder;
+    div.className = "folder";
+
+    const sub = renderNode(node[folder]);
+    li.appendChild(div);
+    li.appendChild(sub);
+
+    div.onclick = () => sub.classList.toggle("hidden");
+    ul.appendChild(li);
+  });
+
+  files.forEach(file => {
+    const li = document.createElement("li");
+    li.textContent = "📄 " + file;
+    li.className = "file";
+    li.onclick = () => previewFile(findFullPath(file, node));
+    ul.appendChild(li);
+  });
+
+  return ul;
+}
+
+function findFullPath(name, node, prefix="") {
+  for (const key in node) {
+    if (node[key] === null && key === name) {
+      return prefix + name;
+    }
+    if (node[key] && typeof node[key] === "object") {
+      const p = findFullPath(name, node[key], prefix + key + "/");
+      if (p) return p;
+    }
+  }
+  return null;
+}
+
+// ------------------------------------------------------------
+// PREVIEW
+// ------------------------------------------------------------
+async function previewFile(path) {
+  const url = BASE_URL + path;
+  const preview = document.getElementById("preview");
+
+  const ext = path.split(".").pop().toLowerCase();
+  const isImage = ["png","jpg","jpeg","gif","webp","svg"].includes(ext);
+  const isText = ["txt","md","json","log","html","css","js","xml","csv"].includes(ext);
+
+  if (isImage) {
+    preview.innerHTML = `<img src="${url}">`;
+    return;
+  }
+
+  if (isText) {
+    const text = await fetch(url).then(r => r.text());
+    preview.innerHTML = `<pre>${escapeHTML(text)}</pre>`;
+    return;
+  }
+
+  preview.innerHTML =
+    `<div>Preview not available. <a target="_blank" href="${url}">Open</a></div>`;
+}
+
+function escapeHTML(str) {
+  return str.replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  }[m]));
+}
+
+// ------------------------------------------------------------
+// AUTO REFRESH
+// ------------------------------------------------------------
+function setRefreshTimer() {
+  const sec = Number(document.getElementById("refresh").value);
+  if (refreshTimer) clearInterval(refreshTimer);
+
+  if (sec > 0) {
+    refreshTimer = setInterval(loadList, sec * 1000);
+  }
+}
+
+// ------------------------------------------------------------
+// EVENTS
+// ------------------------------------------------------------
+document.getElementById("sort").onchange = () => { applySort(); buildTree(); };
+document.getElementById("search").oninput = () => buildTree();
+document.getElementById("refresh").onchange = setRefreshTimer;
+document.getElementById("manual").onclick = loadList;
+
+// ------------------------------------------------------------
+// INIT
+// ------------------------------------------------------------
+loadList();
+setRefreshTimer();
+</script>
+
+</body>
+</html>
