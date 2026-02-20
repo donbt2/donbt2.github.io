@@ -1,57 +1,53 @@
-#!/bin/bash
+# <#
+# --- BASH SECTION (macOS / Linux) ---
+if [ -n "$BASH_VERSION" ] || [ -n "$ZSH_VERSION" ]; then
+    OS_TYPE="$(uname -s)"
+    echo "Unix-like system detected: $OS_TYPE"
 
-# Detect OS
-OS_TYPE="$(uname -s)"
-ID_LIKE=""
+    # 1. macOS Logic
+    if [[ "$OS_TYPE" == "Darwin" ]]; then
+        if ! command -v brew &> /dev/null; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            [[ $(uname -m) == "arm64" ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
+        fi
+        apps=(firefox iterm2 steam brave-browser sublime-text spotify vlc discord 1password raycast)
+        brew install --cask "${apps[@]}"
 
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    ID_LIKE=$ID
-fi
-
-echo "Detected OS: $OS_TYPE / $ID_LIKE"
-
-# --- MACOS LOGIC ---
-if [[ "$OS_TYPE" == "Darwin" ]]; then
-    echo "Running macOS setup..."
-    # Install Homebrew if missing
-    if ! command -v brew &> /dev/null; then
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        [[ $(uname -m) == "arm64" ]] && eval "$(/opt/homebrew/bin/brew shellenv)" || eval "$(/usr/local/bin/brew shellenv)"
+    # 2. Linux Logic (Fedora/Debian)
+    elif [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "Linux detected: $ID"
+        if [[ "$ID" == "fedora" ]]; then
+            sudo dnf install -y firefox steam vlc discord
+        elif [[ "$ID" == "ubuntu" || "$ID" == "debian" ]]; then
+            sudo apt update && sudo apt install -y firefox vlc discord steam
+        fi
     fi
-    
-    apps=(firefox iterm2 steam brave-browser sublime-text spotify vlc discord 1password raycast)
-    brew install --cask "${apps[@]}"
 
-# --- FEDORA LOGIC ---
-elif [[ "$ID" == "fedora" ]]; then
-    echo "Running Fedora setup..."
-    sudo dnf update -y
-    sudo dnf install -y firefox steam sublime-text vlc discord
-    # Note: Brave and 1Password usually require adding specific repos on Fedora
-    echo "Note: You may need to manually add repos for Brave and 1Password on Fedora."
-
-# --- DEBIAN/UBUNTU LOGIC ---
-elif [[ "$ID" == "ubuntu" || "$ID" == "debian" || "$ID_LIKE" == *"debian"* ]]; then
-    echo "Running Debian-based setup..."
-    sudo apt update && sudo apt upgrade -y
-    sudo apt install -y firefox vlc discord steam
-    # Note: Spotify and Sublime often require Snap or Flatpak on Ubuntu
-    
-# --- WINDOWS (WSL) DETECTION ---
-elif [[ "$OS_TYPE" == *"NT"* || "$ID_LIKE" == *"microsoft"* ]]; then
-    echo "Windows detected. Please use a PowerShell (.ps1) script for native Windows apps."
-    exit 1
-
-else
-    echo "Unsupported OS."
-    exit 1
+    # Install Oh My Zsh (Universal for Unix)
+    [ ! -d "$HOME/.oh-my-zsh" ] && sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    exit
 fi
+# >
 
-# --- UNIVERSAL: OH MY ZSH ---
-if [ ! -d "$HOME/.oh-my-zsh" ]; then
-    echo "Installing Oh My Zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-fi
+# --- POWERSHELL SECTION (Windows) ---
+Write-Host "Windows detected. Starting Winget installation..." -ForegroundColor Cyan
 
-echo "Setup complete for $OS_TYPE!"
+$apps = @(
+    "Mozilla.Firefox",
+    "Brave.Brave",
+    "SublimeText.SublimeText.4",
+    "Spotify.Spotify",
+    "VideoLAN.VLC",
+    "Discord.Discord",
+    "AgileBits.1Password",
+    "Valve.Steam",
+    "Microsoft.WindowsTerminal"
+)
+
+foreach ($app in $apps) {
+    Write-Host "Installing $app..." -ForegroundColor Yellow
+    winget install --id $app --silent --accept-package-agreements --accept-source-agreements
+}
+
+Write-Host "Windows setup complete! Note: Raycast/iTerm2 are Mac-only; installed Windows Terminal instead." -ForegroundColor Green
